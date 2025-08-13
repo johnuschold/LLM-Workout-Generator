@@ -1,6 +1,6 @@
 # From Gym Notes to an AI Coach: Building a RAG‑Powered Workout Planner with Streamlit
 
-> **TL;DR**: I built a portfolio project that turns fitness goals into personalized, evidence‑backed workout plans. It uses a retrieval‑augmented generation (RAG) pipeline (FAISS + MiniLM embeddings) to ground an LLM (Mistral‑7B Instruct), then enriches the plan with fuzzy‑matched exercise details and demo videos—all wrapped in a Streamlit app.
+> > **TL;DR**: This app turns fitness goals into personalized workout plans. It uses a retrieval-augmented generation (RAG) pipeline (FAISS + MiniLM embeddings) to ground an LLM (Mistral-7B Instruct), then enriches the plan with fuzzy-matched exercise details and demo videos—all wrapped in a Streamlit interface.
 
 ---
 
