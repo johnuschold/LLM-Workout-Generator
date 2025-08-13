@@ -1,71 +1,73 @@
+# LLMgen.py
 import os
-import sys
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-import math
+from huggingface_hub import login, InferenceClient
+import streamlit as st
 import re
 
-import streamlit as st
-from huggingface_hub import login
-
-
-# LLM Configuration
 LLM_MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-  # finds .env even when cwd changes
-
+# --- Auth: get token from Streamlit secrets or env ---
 hf_key = (
-    st.secrets.get("HF_API_KEY")  # Streamlit Cloud / secrets.toml
-    or os.getenv("HF_API_KEY")    # .env or real env var  # alt name supported by HF
+    st.secrets.get("HF_API_KEY")
+    or os.getenv("HF_API_KEY")
+    or os.getenv("HUGGINGFACE_HUB_TOKEN")
 )
-
 if not hf_key:
     st.error("Missing HF_API_KEY (or HUGGINGFACE_HUB_TOKEN). Add it to .env or Streamlit secrets.")
     st.stop()
 
-# Either login() explicitly...
 login(token=hf_key)
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using compute device: {DEVICE}")
 
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+USE_GPU = torch.cuda.is_available()
 
-_tokenizer = None
-_model = None
-_text_generation_pipeline = None
+# Globals
+_text_generation_pipeline = None     # transformers pipeline (GPU/local)
+_hf_inference_client = None          # HF hosted inference client (CPU/cloud)
+_backend_mode = None
 
 
 def get_llm_pipeline():
-    """Initializes and returns the Hugging Face text generation pipeline, loaded only once."""
-    global _tokenizer, _model, _text_generation_pipeline
+    """
+    Returns either:
+      - a local transformers text-generation pipeline (when CUDA is available)
+      - an HF InferenceClient (when running on CPU / Streamlit Cloud)
+    """
+    global _text_generation_pipeline, _hf_inference_client, _backend_mode
 
-    if _text_generation_pipeline is None:
-        try:
-            _tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL_NAME, trust_remote_code=True)
-            _tokenizer.pad_token = _tokenizer.eos_token
+    if _backend_mode is not None:
+        # already initialized
+        return _text_generation_pipeline if _backend_mode == "local" else _hf_inference_client
 
-            _model = AutoModelForCausalLM.from_pretrained(
-                LLM_MODEL_NAME,
-                trust_remote_code=True,
-                torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
-                device_map="auto"
-            )
-
-            _text_generation_pipeline = pipeline(
-                "text-generation",
-                model=_model,
-                tokenizer=_tokenizer,
-                max_new_tokens=1024,
-                do_sample=True,
-                temperature=0.3,
-                top_p=0.4,
-                repetition_penalty=1.1,
-            )
-            print("LLM pipeline successfully initialized.")
-        except Exception as e:
-            print(f"Error during LLM pipeline initialization: {e}")
-            _text_generation_pipeline = None
-    return _text_generation_pipeline
+    if USE_GPU:
+        # --- Local GPU load ---
+        tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL_NAME, trust_remote_code=True)
+        tokenizer.pad_token = tokenizer.eos_token
+        model = AutoModelForCausalLM.from_pretrained(
+            LLM_MODEL_NAME,
+            trust_remote_code=True,
+            torch_dtype=torch.float16,
+            device_map="auto",
+        )
+        _text_generation_pipeline = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            max_new_tokens=1024,
+            do_sample=True,
+            temperature=0.3,
+            top_p=0.4,
+            repetition_penalty=1.1,
+        )
+        _backend_mode = "local"
+        return _text_generation_pipeline
+    else:
+        # --- Cloud/CPU path: hosted inference ---
+        _hf_inference_client = InferenceClient(model=LLM_MODEL_NAME, token=hf_key)
+        _backend_mode = "remote"
+        return _hf_inference_client
 
 
 def create_workout_prompt(user_goals, fitness_level, split, equipment, retrieved_exercises, workout_days,
@@ -310,15 +312,26 @@ def get_improved_rag_query(original_query: str, muscle_groups: list[str], goal: 
 
 
 def generate_text_with_llm(prompt: str) -> str:
-    """A wrapper function to interact with the pre-loaded LLM pipeline and generate text."""
-    llm_pipeline = get_llm_pipeline()
+    """
+    Works with both backends transparently.
+    """
     try:
-        result = llm_pipeline(prompt)
-        generated_text = result[0]['generated_text']
-
-        if generated_text.startswith(prompt):
-            return generated_text[len(prompt):].strip()
-        return generated_text.strip()
+        backend = get_llm_pipeline()
+        if _backend_mode == "local":
+            result = backend(prompt)
+            text = result[0]["generated_text"]
+            return text[len(prompt):].strip() if text.startswith(prompt) else text.strip()
+        else:
+            # HF Inference API
+            text = backend.text_generation(
+                prompt,
+                max_new_tokens=1024,
+                temperature=0.3,
+                top_p=0.4,
+                repetition_penalty=1.1,
+                return_full_text=False,
+            )
+            return text.strip()
     except Exception as e:
-        print(f"Error during LLM text generation: {e}")
+        st.error(f"LLM generation failed: {e}")
         return "An error occurred while generating the plan. Please try again or adjust your inputs."

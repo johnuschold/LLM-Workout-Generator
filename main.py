@@ -1,14 +1,18 @@
+# app.py
 import streamlit as st
-import re
-import pandas as pd
+st.set_page_config(page_title="AI Fitness Coach", layout="centered")
 
-from LLMgen import get_llm_pipeline, create_workout_prompt, generate_text_with_llm, \
-    get_improved_rag_query
+# then the rest of your imports...
+import os
+import re
+import math
+import pandas as pd
+import torch
+from thefuzz import process, fuzz
+
+from LLMgen import get_llm_pipeline, create_workout_prompt, generate_text_with_llm, get_improved_rag_query
 from rag_retriever import load_vectorstore, retrieve_similar_documents
 
-# Import thefuzz for fuzzy string matching
-from thefuzz import process
-from thefuzz import fuzz
 
 
 # Initialize the LLM pipeline once
