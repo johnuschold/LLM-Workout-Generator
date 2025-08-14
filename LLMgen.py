@@ -324,15 +324,23 @@ def generate_text_with_llm(prompt: str) -> str:
             return text[len(prompt):].strip() if text.startswith(prompt) else text.strip()
         else:
             # HF Inference API
-            text = backend.text_generation(
-                prompt,
-                max_new_tokens=1024,
+            resp = backend.chat_completion(
+                model=LLM_MODEL_NAME,  # e.g. "mistralai/Mistral-7B-Instruct-v0.2"
+                messages=[
+                    {"role": "system",
+                     "content": "You are a helpful fitness coach who writes clear, actionable workouts."},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=1024,
                 temperature=0.3,
                 top_p=0.4,
-                repetition_penalty=1.1,
-                return_full_text=False,
             )
-            return text.strip()
+
+            # Extract the assistant’s reply (handles object- or dict-like responses)
+            choice0 = resp.choices[0]
+            msg = choice0["message"] if isinstance(choice0, dict) else getattr(choice0, "message", {})
+            content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
+            return (content or "").strip()
     except Exception as e:
         st.error(f"LLM generation failed: {e}")
         return "An error occurred while generating the plan. Please try again or adjust your inputs."
