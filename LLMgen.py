@@ -2,9 +2,10 @@
 import os
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-from huggingface_hub import login, InferenceClient
+from huggingface_hub import InferenceClient
 import streamlit as st
 import re
+import math
 
 LLM_MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -19,7 +20,7 @@ if not hf_key:
     st.error("Missing HF_API_KEY (or HUGGINGFACE_HUB_TOKEN). Add it to .env or Streamlit secrets.")
     st.stop()
 
-login(token=hf_key)
+
 
 USE_GPU = torch.cuda.is_available()
 

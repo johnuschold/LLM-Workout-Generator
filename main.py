@@ -25,7 +25,7 @@ llm_pipeline = load_llm()
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 SAVE_PATH_EXERCISE = "./faiss_index_exercises"
 
-st.set_page_config(page_title="AI Fitness Coach", layout="centered")
+
 
 
 # Load the FAISS vector store for exercises
