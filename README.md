@@ -13,6 +13,9 @@ Key Characteristics:
 - **Deployable**: run as a Streamlit app.
 
 ---
+## DEMO
+
+[Streamlit](https://llm-workout-generator-mx9nrbg9gnsruunemprjr8.streamlit.app)
 
 ## The Core Idea
 
