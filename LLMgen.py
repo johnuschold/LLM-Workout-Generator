@@ -269,81 +269,47 @@ Please adhere to the following Markdown format for the output:
     return prompt
 
 
-def get_improved_rag_query(original_query: str,
-                           muscle_groups: list[str],
-                           goal: str,
-                           difficulty: str,
+def get_improved_rag_query(original_query: str, muscle_groups: list[str], goal: str, difficulty: str,
                            equipment: str) -> str:
-    """Return a compact, positive-only keyword string (~8–20 tokens) for bag-of-words search."""
+    """Constructs an optimized RAG query, incorporating user goals and respecting negative constraints."""
 
     muscle_groups_str = ", ".join(muscle_groups) if muscle_groups else "any muscle group"
 
-    # 1) Strict chat prompt (system + user). No trailing "Improved prompt:".
-    system_msg = (
-        "You rewrite requests into a SINGLE compact keyword string for a bag-of-words search.\n"
-        "HARD RULES:\n"
-        "- Output exactly one line, no explanations.\n"
-        "- Only POSITIVE keywords; never echo excluded items or any negation words.\n"
-        "- 8–20 tokens total, comma or space separated; no sentences.\n"
-        "- Use canonical exercise indexing terms (e.g., glute, hamstring, dumbbell, bodyweight, unilateral, hypertrophy).\n"
-        "- Emphasize allowed equipment, target muscles, useful tags (EMOM, AMRAP, mobility, beginner/intermediate/advanced).\n"
-        "- Do not include stems/synonyms of excluded items."
-    )
+    llm_prompt = f"""
+    You are an expert query refiner for a Retrieval-Augmented Generation (RAG) system that ranks documents by lexical/keyword similarity (bag-of-words). Your job is to produce a single, compact search string of ONLY positive keywords to retrieve exercise documents.
+    
+    Critical: The system does not understand semantics or negation. If a word appears in the query, results will likely include that word. Therefore:
+    - Do NOT include any excluded items from the user's 'original_query'—not even as negations (e.g., "no barbell", "without legs").
+    - Do NOT include stems, plural/singular variants, abbreviations, or common synonyms of excluded items.
+    - Do NOT include generic negation words (no/avoid/exclude/without) or any “do not include” phrasing at all.
+    
+    Inputs:
+    - User's original request/special instructions: '{original_query}'
+    - User's Goal: '{goal}'
+    - User's Fitness Level: '{difficulty}'
+    - User's Equipment: '{equipment}'
+    - Target Muscle Groups: '{muscle_groups_str}'
+    
+    Instructions:
+    1) Extract explicit and implicit negative constraints from 'original_query' (e.g., injuries, equipment to avoid, disliked movements). Internally note them, but NEVER echo them in the output.
+    2) Build a positive-only keyword string that emphasizes:
+       • Allowed exercise types and movement patterns
+       • Target muscle groups (and safe neighboring muscles if needed)
+       • Allowed/available equipment only
+       • Intended difficulty level / progression
+       • Programming tags commonly used in exercise databases (e.g., bodyweight, dumbbell, unilateral, low-impact, beginner, hypertrophy, mobility, warm-up, EMOM, AMRAP) when relevant
+    3) Canonicalize terms to how they’re likely indexed (e.g., “glutes” and “gluteus” → “glute”, “hamstrings” → “hamstring”), and include a few high-value synonyms for INCLUDED items only.
+    4) Prefer safe alternatives when a region is excluded (e.g., if legs are excluded, favor core, upper-body, low-impact, mobility, etc.), but NEVER mention the excluded region by name.
+    5) Keep it concise: ~8–20 tokens, comma- or space-separated, no sentences, no punctuation other than commas/spaces.
+    
+    Output format:
+    Return ONLY the refined keyword query string (no preface or trailing text).
+    
+    Improved prompt:
+    """
 
-    user_msg = (
-        f"Original request (may contain exclusions—do NOT echo them): {original_query}\n"
-        f"Goal: {goal}\n"
-        f"Fitness level: {difficulty}\n"
-        f"Equipment: {equipment}\n"
-        f"Target muscle groups: {muscle_groups_str}\n"
-        "Return ONLY the refined keyword string on one line."
-    )
-
-    # 2) Call the chat model (backend is your InferenceClient)
-    resp = backend.chat_completion(
-        model=LLM_MODEL_NAME,
-        messages=[
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ],
-        max_tokens=80,       # small cap; enough for ~20 short tokens
-        temperature=0.2,     # lower temp = less rambling
-        top_p=0.9,
-        # Many providers accept "stop" (safe to include; ignored if unsupported):
-        stop=["\n\n", "\n\n\n"]
-    )
-
-    # 3) Extract assistant content robustly
-    choice0 = resp.choices[0]
-    msg = choice0["message"] if isinstance(choice0, dict) else getattr(choice0, "message", {})
-    raw = (msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")).strip()
-
-    # 4) Post-process: keep first line, sanitize, deduplicate, cap length
-    first_line = raw.splitlines()[0].strip()
-
-    # Allow letters, digits, spaces, commas, hyphens; drop everything else
-    import re
-    cleaned = re.sub(r"[^A-Za-z0-9 ,\-]", " ", first_line)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,")
-
-    # Split on commas/spaces into tokens, then dedupe in-order
-    parts = re.split(r"[,\s]+", cleaned)
-    seen = set()
-    tokens = []
-    for p in parts:
-        if not p:
-            continue
-        low = p.lower()
-        if low not in seen:
-            seen.add(low)
-            tokens.append(p)
-
-    # Enforce 8–20 tokens (trim if too long; if too short, just return what we have)
-    if len(tokens) > 20:
-        tokens = tokens[:20]
-
-    # Join with commas for clarity
-    return ", ".join(tokens)
+    improved_query = generate_text_with_llm(llm_prompt)
+    return improved_query
 
 
 def generate_text_with_llm(prompt: str) -> str:

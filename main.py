@@ -243,8 +243,7 @@ with st.expander("Workout Plan Inputs", expanded=True):
                     equipment=equipment,
                     difficulty=fitness_level
                 )
-                st.info(
-                    f"Leveraging an AI-enhanced search query for more relevant exercise suggestions: `{improved_query_for_rag}`")
+
 
                 rag_retrieved_exercises = retrieve_similar_documents(
                     query=improved_query_for_rag,
